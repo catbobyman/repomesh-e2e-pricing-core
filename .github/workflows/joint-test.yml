@@ -1,0 +1,67 @@
+name: joint-test
+
+# Cross-repository validation for one ValidationSnapshot. RepoMesh dispatches this
+# workflow with the candidate revision of every repository in the snapshot; the
+# result is reported back as the `repomesh/joint-test` check on each pull request.
+
+on:
+  repository_dispatch:
+    types: [repomesh-joint-test]
+  workflow_dispatch:
+    inputs:
+      pricing_core_sha:
+        description: pricing-core candidate revision
+        required: true
+      checkout_sha:
+        description: checkout candidate revision
+        required: true
+      billing_sha:
+        description: billing candidate revision
+        required: true
+
+jobs:
+  joint:
+    runs-on: ubuntu-latest
+    env:
+      PRICING_CORE_SHA: ${{ github.event.client_payload.pricing_core_sha || inputs.pricing_core_sha }}
+      CHECKOUT_SHA: ${{ github.event.client_payload.checkout_sha || inputs.checkout_sha }}
+      BILLING_SHA: ${{ github.event.client_payload.billing_sha || inputs.billing_sha }}
+      SNAPSHOT_HASH: ${{ github.event.client_payload.snapshot_hash || 'manual' }}
+    steps:
+      - name: Check out pricing-core at its candidate revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PRICING_CORE_SHA }}
+          path: pricing-core
+
+      # Public fixtures clone anonymously, so no cross-repository token is needed.
+      - name: Check out the consumer candidates
+        run: |
+          git clone https://github.com/catbobyman/repomesh-e2e-checkout.git checkout
+          git -C checkout checkout "$CHECKOUT_SHA"
+          git clone https://github.com/catbobyman/repomesh-e2e-billing.git billing
+          git -C billing checkout "$BILLING_SHA"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run the cross-repository joint tests
+        env:
+          CHECKOUT_SRC: ${{ github.workspace }}/checkout/src
+          BILLING_SRC: ${{ github.workspace }}/billing/src
+        run: python pricing-core/integration/run_joint_tests.py
+
+      - name: Report the snapshot that was validated
+        if: always()
+        run: |
+          echo "snapshot=$SNAPSHOT_HASH" >> "$GITHUB_STEP_SUMMARY"
+          echo "pricing-core=$PRICING_CORE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "checkout=$CHECKOUT_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "billing=$BILLING_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      # W3: post the result back as the `repomesh/joint-test` check run on each
+      # candidate head SHA. Writing checks into the consumer repositories needs a
+      # token that spans all three (GitHub App installation token or a PAT stored
+      # as REPOMESH_FIXTURE_TOKEN) — the default GITHUB_TOKEN is scoped to this
+      # repository only.
