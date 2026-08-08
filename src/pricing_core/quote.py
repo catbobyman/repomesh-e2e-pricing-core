@@ -2,6 +2,9 @@
 
 from dataclasses import dataclass
 
+ZERO_DECIMAL_CURRENCIES = frozenset({"JPY", "KRW", "VND"})
+
+
 
 @dataclass(frozen=True)
 class LineItem:
@@ -36,4 +39,5 @@ def quote(
     merchandise = sum(item.amount for item in items)
     payable = merchandise * (1 - discount_rate) + shipping
     payable = payable * (1 + tax_rate)
-    return Quote(amount=round(payable, 2), currency=currency)
+    digits = 0 if currency.upper() in ZERO_DECIMAL_CURRENCIES else 2
+    return Quote(amount=round(payable, digits), currency=currency)
