@@ -33,6 +33,28 @@ class QuoteCurrencyTests(unittest.TestCase):
         result = quote([LineItem("book", 10.0, 1)])
         self.assertEqual(result.currency, "USD")
 
+    def test_every_supported_currency_is_carried_through(self) -> None:
+        for currency in ("USD", "EUR", "JPY"):
+            with self.subTest(currency=currency):
+                result = quote([LineItem("book", 10.0, 1)], currency=currency)
+                self.assertEqual(result.currency, currency)
+
+    def test_currency_travels_with_a_fully_priced_basket(self) -> None:
+        result = quote(
+            [LineItem("desk", 200.0, 1), LineItem("lamp", 50.0, 2)],
+            shipping=20.0,
+            discount_rate=0.1,
+            tax_rate=0.1,
+            currency="JPY",
+        )
+        self.assertEqual(result.currency, "JPY")
+        self.assertEqual(result.amount, 319.0)
+
+    def test_currency_does_not_change_the_amount(self) -> None:
+        basket = [LineItem("book", 10.0, 2)]
+        amounts = {quote(basket, shipping=5.0, currency=c).amount for c in ("USD", "EUR", "JPY")}
+        self.assertEqual(amounts, {25.0})
+
 
 if __name__ == "__main__":
     unittest.main()
