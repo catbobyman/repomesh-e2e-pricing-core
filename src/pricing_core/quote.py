@@ -1,22 +1,7 @@
 """The quoting contract every storefront service prices against."""
 
-from dataclasses import dataclass
-
-
-@dataclass(frozen=True)
-class LineItem:
-    name: str
-    unit_price: float
-    quantity: int
-
-    @property
-    def amount(self) -> float:
-        return self.unit_price * self.quantity
-
-
-@dataclass(frozen=True)
-class Quote:
-    amount: float
+from .contracts import LineItem, Quote
+from .rounding import currency_precision, normalize_currency, round_money
 
 
 def quote(
@@ -24,6 +9,7 @@ def quote(
     shipping: float = 0.0,
     discount_rate: float = 0.0,
     tax_rate: float = 0.0,
+    currency: str = "USD",
 ) -> Quote:
     """Price a basket.
 
@@ -31,7 +17,19 @@ def quote(
     payable amount is taxed.
     """
 
+    normalized_currency = normalize_currency(currency)
+    precision = currency_precision(normalized_currency)
     merchandise = sum(item.amount for item in items)
-    payable = merchandise * (1 - discount_rate) + shipping
-    payable = payable * (1 + tax_rate)
-    return Quote(amount=round(payable, 2))
+    discount = merchandise * discount_rate
+    taxable = merchandise - discount + shipping
+    tax = taxable * tax_rate
+    payable = taxable + tax
+    return Quote(
+        amount=round_money(payable, precision),
+        currency=normalized_currency,
+        precision=precision,
+        merchandise=round_money(merchandise, precision),
+        discount=round_money(discount, precision),
+        shipping=round_money(shipping, precision),
+        tax=round_money(tax, precision),
+    )
